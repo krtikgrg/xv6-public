@@ -82,6 +82,24 @@ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
 # FreeBSD ld wants ``elf_i386_fbsd''
 LDFLAGS += -m $(shell $(LD) -V | grep elf_i386 2>/dev/null | head -n 1)
 
+# changes by kartik
+ifndef SCHEDULER
+CFLAGS+="-DRR"
+endif
+ifeq ($(SCHEDULER),MLFQ)
+CFLAGS+="-DMLFQ"
+endif
+ifeq ($(SCHEDULER),PBS)
+CFLAGS+="-DPBS"
+endif
+ifeq ($(SCHEDULER),FCFS)
+CFLAGS+="-DFCFS"
+endif
+ifeq ($(SCHEDULER),RR)
+CFLAGS+="-DRR"
+endif
+#changes ended
+
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
 CFLAGS += -fno-pie -no-pie
@@ -174,6 +192,10 @@ UPROGS=\
 	_kill\
 	_ln\
 	_ls\
+	_time\
+	_setPriority\
+	_benchmark\
+	_ps\
 	_mkdir\
 	_rm\
 	_sh\
@@ -250,7 +272,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
 EXTRA=\
 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
-	printf.c umalloc.c\
+	printf.c umalloc.c time.c setPriority.c ps.c benchmark.c\
 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl gdbutil\
 

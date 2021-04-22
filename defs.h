@@ -45,7 +45,7 @@ void            ilock(struct inode*);
 void            iput(struct inode*);
 void            iunlock(struct inode*);
 void            iunlockput(struct inode*);
-void            iupdate(struct inode*);
+void            iupdate(struct inode*); 
 int             namecmp(const char*, const char*);
 struct inode*   namei(char*);
 struct inode*   nameiparent(char*, char*);
@@ -118,6 +118,12 @@ void            setproc(struct proc*);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);
 int             wait(void);
+//changes by kartik
+int             waitx(int *wtime,int *rtime);
+int             set_priority(int new_priority,int pid);
+void            pscall(void);
+void            uprtimewtime(void);
+//changes finished
 void            wakeup(void*);
 void            yield(void);
 

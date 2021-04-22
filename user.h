@@ -5,6 +5,11 @@ struct rtcdate;
 int fork(void);
 int exit(void) __attribute__((noreturn));
 int wait(void);
+//changes by kartik
+int waitx(int *wtime,int *rtime);
+int set_priority(int new_priority,int pid);
+void pscall(void);
+//changes finished
 int pipe(int*);
 int write(int, const void*, int);
 int read(int, void*, int);

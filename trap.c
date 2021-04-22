@@ -51,6 +51,15 @@ trap(struct trapframe *tf)
     if(cpuid() == 0){
       acquire(&tickslock);
       ticks++;
+      //changes by kartik
+      uprtimewtime();
+      /*struct proc* cpro = myproc();
+      if(cpro!=0 && cpro->state == RUNNING)
+      {
+        (cpro->rtime)++;
+        (cpro->ticksinq)++;
+      }*/
+      //changes done  
       wakeup(&ticks);
       release(&tickslock);
     }

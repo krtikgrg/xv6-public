@@ -26,6 +26,35 @@ sys_wait(void)
   return wait();
 }
 
+//chnages by kartik
+int 
+sys_waitx(void)
+{
+  int *wtime,*rtime;
+  if(argptr(0,(char **) &wtime,sizeof(wtime))<0)
+  return -1;
+  if(argptr(1,(char **) &rtime,sizeof(rtime))<0)
+  return -1;
+  return waitx(wtime,rtime);
+}
+
+int sys_set_priority(void)
+{
+  int new_priority,pid;
+  if(argint(0,&new_priority) < 0)
+  return -1;
+  if(argint(1,&pid) < 0)
+  return -1;
+  return set_priority(new_priority,pid);
+}
+
+int sys_pscall(void)
+{
+  pscall();
+  return 1;
+}
+//changes finished
+
 int
 sys_kill(void)
 {

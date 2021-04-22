@@ -20,3 +20,8 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+//changes by kartik
+#define SYS_waitx  22
+#define SYS_set_priority 23
+#define SYS_pscall 24
+//chnages finished

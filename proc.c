@@ -20,6 +20,19 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+//changes by kartik
+/*struct qu{
+  int strt;
+  int end;
+  struct proc **arrq;
+};
+struct qu allq[5];*/
+void rrsched(struct cpu *c) __attribute__((noreturn));
+void fcfssched(struct cpu *c) __attribute__((noreturn));
+void pbsched(struct cpu *c) __attribute__((noreturn));
+void mlfqsched(struct cpu *c) __attribute__((noreturn));
+//changed ended
+
 void
 pinit(void)
 {
@@ -73,6 +86,22 @@ myproc(void) {
 static struct proc*
 allocproc(void)
 {
+  /*//chnges by kartik
+  #ifndef QINIT
+  #define QINIT
+  for(int i=0;i<5;i++)
+  {
+    allq[i].strt=0;
+    allq[i].end=0;
+    allq[i].arrq=(struct proc **)malloc(10000*sizeof(struct proc *));
+    for(int j=0;j<10000;j++)
+    {
+      allq[i].arrq[j]=(struct proc *)malloc(sizeof(struct proc));
+      allq[i].arrq[j]=0;
+    }
+  }
+  #endif
+  //chnges done*/
   struct proc *p;
   char *sp;
 
@@ -88,7 +117,22 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  //changes by kartik
+  p->rtime = 0;
+  p->wtime=0;
+  p->ctime = ticks;
+  p->nrun = 0;
+  p->priority = 60;
+  p->wfrmlstrn=0;
+  p->tick[0]=0;
+  p->tick[1]=0;
+  p->tick[2]=0;
+  p->tick[3]=0;
+  p->tick[4]=0;
+  p->queue=0;
+  p->etq=ticks;
+  p->ticksinq=0;
+  //done chnges
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -111,7 +155,10 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-
+  /*//chnges by kartik
+  allq[0].arrq[allq[0].end]=p;
+  allq[0].end++;
+  //chnges done*/
   return p;
 }
 
@@ -263,6 +310,9 @@ exit(void)
 
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
+  //changes by kartik
+  curproc->etime = ticks;
+  //changes done
   sched();
   panic("zombie exit");
 }
@@ -295,6 +345,25 @@ wait(void)
         p->name[0] = 0;
         p->killed = 0;
         p->state = UNUSED;
+
+        //changes by kartik
+        p->rtime=0;
+        p->ctime=0;
+        p->etime=0;
+        p->wtime=0;
+        p->nrun=0;
+        p->priority=60;
+        p->wfrmlstrn=0;
+        p->tick[0]=0;
+        p->tick[1]=0;
+        p->tick[2]=0;
+        p->tick[3]=0;
+        p->tick[4]=0;
+        p->queue=0;
+        p->ticksinq=0;
+        p->etq=0;
+        //done changes
+
         release(&ptable.lock);
         return pid;
       }
@@ -311,6 +380,138 @@ wait(void)
   }
 }
 
+//changes by kartik, implementing waitx,set_priority,pscall
+int
+waitx(int *wtime,int *rtime)
+{
+  struct proc *p;
+  int havekids, pid;
+  struct proc *curproc = myproc();
+  
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != curproc)
+        continue;
+      havekids = 1;
+      if(p->state == ZOMBIE){
+        // Found one.
+        pid = p->pid;
+        kfree(p->kstack);
+        p->kstack = 0;
+        freevm(p->pgdir);
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->state = UNUSED;
+
+        //changes by kartik
+        *wtime = p->wtime;
+        *rtime = p->rtime;
+        p->rtime=0;
+        p->ctime=0;
+        p->etime=0;
+        p->wtime=0;
+        p->nrun=0;
+        p->priority=60;
+        p->wfrmlstrn=0;
+        p->tick[0]=0;
+        p->tick[1]=0;
+        p->tick[2]=0;
+        p->tick[3]=0;
+        p->tick[4]=0;
+        p->queue=0;
+        p->ticksinq=0;
+        p->etq=0;
+        //done changes
+        
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if(!havekids || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+int
+set_priority(int new_priority,int pid){
+  struct proc *p;
+  int opr=101;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid)
+    {
+      opr=p->priority;
+      p->priority=new_priority;
+      break;
+    }
+  }
+  release(&ptable.lock);
+  if(opr==101)
+  return -1;
+  return opr;
+}
+
+void
+pscall(void){
+  struct proc *p;
+  int piro,q,q0,q1,q2,q3,q4;
+  cprintf("PID\tPriority\tState\tr_time\tw_time\tn_run\tcur_q\tq0\tq1\tq2\tq3\tq4\n");
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid!=0)
+    {
+      #ifdef PBS
+      piro=p->priority;
+      #else
+      piro=-1;
+      #endif
+      #ifdef MLFQ
+      q=p->queue;
+      q0=p->tick[0];
+      q1=p->tick[1];
+      q2=p->tick[2];
+      q3=p->tick[3];
+      q4=p->tick[4];
+      #else
+      q=-1;
+      q0=-1;
+      q1=-1;
+      q2=-1;
+      q3=-1;
+      q4=-1;
+      #endif
+      if(p->state==UNUSED)
+        cprintf("%d\t%d\tunused  \t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",p->pid,piro,p->rtime,p->wfrmlstrn,p->nrun,q,q0,q1,q2,q3,q4);
+      else if(p->state==EMBRYO)
+        cprintf("%d\t%d\tembryo  \t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",p->pid,piro,p->rtime,p->wfrmlstrn,p->nrun,q,q0,q1,q2,q3,q4);
+      else if(p->state==SLEEPING)
+        cprintf("%d\t%d\tsleeping\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",p->pid,piro,p->rtime,p->wfrmlstrn,p->nrun,q,q0,q1,q2,q3,q4);
+      else if(p->state==RUNNABLE)
+        cprintf("%d\t%d\trunnable\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",p->pid,piro,p->rtime,p->wfrmlstrn,p->nrun,q,q0,q1,q2,q3,q4);
+      else if(p->state==RUNNING)
+        cprintf("%d\t%d\trunning \t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",p->pid,piro,p->rtime,p->wfrmlstrn,p->nrun,q,q0,q1,q2,q3,q4);
+      else if(p->state==ZOMBIE)
+        cprintf("%d\t%d\tzombie  \t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n",p->pid,piro,p->rtime,p->wfrmlstrn,p->nrun,q,q0,q1,q2,q3,q4);         
+    }
+  }
+  release(&ptable.lock);
+}
+//changes done
+
+
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -322,11 +523,28 @@ wait(void)
 void
 scheduler(void)
 {
-  struct proc *p;
+  //struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
   
-  for(;;){
+  //changes by kartik
+  //if RR scheduler then call rrsched
+  //if FCFS scheduler then call fcfssched
+  //if PB scheduler then call pbsched
+  //if MLFQ scheduler then call mlfqsched
+  #ifdef RR
+  rrsched(c);
+  #endif
+  #ifdef FCFS
+  fcfssched(c);
+  #endif
+  #ifdef PBS
+  pbsched(c);
+  #endif
+  #ifdef MLFQ
+  mlfqsched(c);
+  #endif
+  /*for(;;){
     // Enable interrupts on this processor.
     sti();
 
@@ -352,8 +570,216 @@ scheduler(void)
     }
     release(&ptable.lock);
 
+  }*/
+}
+
+void
+rrsched(struct cpu *c){
+  struct proc *p;
+  for(;;){
+    // Enable interrupts on this processor.
+    sti();
+    
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
+
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      
+      c->proc = p;
+      switchuvm(p);
+      p->state = RUNNING;
+      p->nrun++;
+      p->wfrmlstrn=0;
+
+      swtch(&(c->scheduler), p->context);
+      switchkvm();
+  
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+    }
+    release(&ptable.lock);
+
   }
 }
+void
+fcfssched(struct cpu *c){
+  struct proc *p;
+  struct proc *sp;
+  long long int selpro = -1;
+  for(;;){
+    // Enable interrupts on this processor.
+    sti();
+
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+    selpro = -1;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
+      if(selpro==-1 || (selpro!=-1 && selpro > p->ctime)){
+        selpro = p->ctime;
+        sp=p;  
+      }  
+    }
+    if(selpro!=-1)
+    {
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      while(sp->state!=SLEEPING && sp->state!=ZOMBIE){
+      c->proc = sp;
+      switchuvm(sp);
+      sp->state = RUNNING;
+      p->nrun++;
+      sp->wfrmlstrn=0;
+
+      swtch(&(c->scheduler), sp->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+      }
+    }
+    release(&ptable.lock);   
+  }
+}
+void
+pbsched(struct cpu* c){
+  struct proc *p;
+  struct proc *sp;
+  int priori = 101;
+  for(;;){
+    // Enable interrupts on this processor.
+    sti();
+
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+    priori = 101;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
+      if(p->priority < priori)
+      {
+        sp=p;
+        priori=p->priority;
+      }
+    }
+    if(priori!=101)
+    {
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      c->proc = sp;
+      switchuvm(sp);
+      sp->state = RUNNING;
+      sp->nrun++;
+      sp->wfrmlstrn=0;
+      
+      swtch(&(c->scheduler), sp->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0;
+    }
+    release(&ptable.lock);
+  }  
+}
+
+void
+mlfqsched(struct cpu* c){
+  struct proc *p;
+  struct proc *sp;
+  int powt[]={1,2,4,8,16,32};
+  int qfnd=5;
+  int tmeq=-1; 
+  for(;;){
+    // Enable interrupts on this processor.
+    sti();
+    qfnd=5;
+    tmeq=-1;
+    // Loop over process table looking for process to run.
+    acquire(&ptable.lock);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      //p->wfrmlstrn=ticks-(p->etq)-(p->ticksinq);
+      if(p->wfrmlstrn>=(powt[(p->queue)]*10) && p->queue!=0)
+      {
+        p->wfrmlstrn=0;
+        //p->tick[p->queue]=p->tick[p->queue]+p->ticksinq;
+        p->queue--;
+        p->ticksinq=0;
+        p->etq=ticks;
+      }
+      if(p->queue<4)
+      {
+        if(p->ticksinq>=powt[p->queue])
+        {
+          p->wfrmlstrn=0;
+          //p->tick[p->queue]=p->tick[p->queue]+p->ticksinq;
+          (p->queue)++;
+          p->ticksinq=0;
+          p->etq=ticks;
+        }
+      }
+      if(p->state != RUNNABLE)
+        continue;
+      if(p->queue<qfnd)
+      {
+        qfnd=p->queue;
+        tmeq=p->etq;
+        sp=p;
+      }
+      else if(p->queue==qfnd)
+      {
+        if(p->etq<tmeq)
+        {
+          tmeq=p->etq;
+          sp=p;
+        }
+      }
+    }
+    if(qfnd!=5)
+    {
+      // Switch to chosen process.  It is the process's job
+      // to release ptable.lock and then reacquire it
+      // before jumping back to us.
+      
+      //implementing RR for queue 4
+      if(qfnd==4)
+      {
+        for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+          if(p->state==RUNNABLE && p->queue==4)
+          {
+            sp=p;
+            break;
+          }
+        }
+      }
+      c->proc = sp;
+      switchuvm(sp);
+      sp->state = RUNNING;
+      (sp->nrun)++;
+      sp->wfrmlstrn=0;
+      //sp->etq=ticks;
+
+      swtch(&(c->scheduler), sp->context);
+      switchkvm();
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
+      c->proc = 0; 
+    }
+    release(&ptable.lock);
+  }
+}
+//changes done
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
@@ -461,7 +887,12 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan)
+    {
       p->state = RUNNABLE;
+      //changes by kartik 
+      p->etq=ticks;
+      //changes done
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -497,7 +928,7 @@ kill(int pid)
 }
 
 //PAGEBREAK: 36
-// Print a process listing to console.  For debugging.
+// Print a process listing to console.  For debugging. 
 // Runs when user types ^P on console.
 // No lock to avoid wedging a stuck machine further.
 void
@@ -531,4 +962,26 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+//changes by kartik
+void
+uprtimewtime(void){
+  struct proc *p;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    if(p->state==RUNNING)
+    {
+      (p->rtime)++;
+      (p->ticksinq)++;
+      (p->tick[p->queue])++;
+    }
+    else if(p->state==EMBRYO || p->state==UNUSED || p->state==RUNNABLE)
+    {
+      (p->wtime)++;
+      (p->wfrmlstrn)++;
+    }
+  }
+  release(&ptable.lock);
 }
